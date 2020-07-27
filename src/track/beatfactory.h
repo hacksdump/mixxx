@@ -33,7 +33,7 @@ class BeatFactory {
             const int iMinBpm,
             const int iMaxBpm);
 
-        
+    static void deleteBeats(mixxx::Beats* pBeats);
 
   private:
     

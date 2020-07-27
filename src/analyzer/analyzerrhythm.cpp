@@ -8,7 +8,7 @@
 
 #include "analyzer/constants.h"
 #include "track/beatfactory.h"
-#include "track/beatmap.h"
+#include "track/beats.h"
 #include "track/track.h"
 #include "engine/engine.h" // Included to get mixxx::kEngineChannelCount
 #include "analyzer/analyzerrhythmstats.h"
@@ -107,7 +107,7 @@ bool AnalyzerRhythm::shouldAnalyze(TrackPointer pTrack) const {
     if (!pBeats) {
         return true;
     }
-    else if (!mixxx::Bpm::isValidValue(pBeats->getBpm())) {
+    else if (!mixxx::Bpm::isValidValue(pBeats->getBpm().getValue())) {
         qDebug() << "Re-analyzing track with invalid BPM despite preference settings.";
         return true;
     } else {
@@ -277,7 +277,23 @@ void AnalyzerRhythm::storeResults(TrackPointer pTrack) {
         m_resultBeats = downbeats;
     }
     // TODO(Cristiano&Harshit) THIS IS WHERE A BEAT VECTOR IS CREATED
-    auto pBeatMap = new mixxx::BeatMap(*pTrack, m_iSampleRate, m_resultBeats);
-    auto pBeats = mixxx::BeatsPointer(pBeatMap, &BeatFactory::deleteBeats);
-    pTrack->setBeats(pBeats);
+    
+    QVector<mixxx::FramePos> intermediateBeatFrameVector;
+    intermediateBeatFrameVector.reserve(m_resultBeats.size());
+    std::transform(m_resultBeats.begin(),
+            m_resultBeats.end(),
+            std::back_inserter(intermediateBeatFrameVector),
+                    [](double value) { return mixxx::FramePos(value); });
+    
+
+    mixxx::track::io::TimeSignatureMarker timeSignatureMarker;
+    timeSignatureMarker.set_downbeat_index(firstDownbeat);
+    QVector<mixxx::track::io::TimeSignatureMarker> timeSignatureMarkers;
+    timeSignatureMarkers.push_back(timeSignatureMarker);
+    qDebug() << firstDownbeat;
+    mixxx::Beats* pBeats = new mixxx::Beats(
+            pTrack.get(), intermediateBeatFrameVector, timeSignatureMarkers);
+
+    pTrack->setBeats(mixxx::BeatsPointer(pBeats, &BeatFactory::deleteBeats));
+    
 }
