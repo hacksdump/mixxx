@@ -14,7 +14,7 @@
 #include "mixer/playerinfo.h"
 #include "mixer/playermanager.h"
 #include "sources/soundsourceproxy.h"
-#include "track/beatgrid.h"
+#include "track/beats.h"
 #include "track/track.h"
 #include "util/compatibility.h"
 #include "util/platform.h"
@@ -32,7 +32,8 @@ const double kShiftCuesOffsetSmallMillis = 1;
 inline double trackColorToDouble(mixxx::RgbColor::optional_t color) {
     return (color ? static_cast<double>(*color) : kNoTrackColor);
 }
-}
+
+} // anonymous namespace
 
 BaseTrackPlayer::BaseTrackPlayer(QObject* pParent, const QString& group)
         : BasePlayer(pParent, group) {

@@ -955,6 +955,7 @@ class MixxxCore(Feature):
                    "src/sources/soundsourceproxy.cpp",
 
                    "src/widget/controlwidgetconnection.cpp",
+                   "src/widget/wbeatmenu.cpp",
                    "src/widget/wbasewidget.cpp",
                    "src/widget/wwidget.cpp",
                    "src/widget/wwidgetgroup.cpp",
@@ -1010,6 +1011,7 @@ class MixxxCore(Feature):
                    "src/widget/wcolorpickeraction.cpp",
                    "src/widget/wcuemenupopup.cpp",
                    "src/widget/wsingletoncontainer.cpp",
+                   "src/widget/wtimesignaturemenu.cpp",
                    "src/widget/wmainmenubar.cpp",
 
                    "src/musicbrainz/tagfetcher.cpp",
@@ -1166,6 +1168,7 @@ class MixxxCore(Feature):
                    "src/waveform/guitick.cpp",
                    "src/waveform/visualsmanager.cpp",
                    "src/waveform/visualplayposition.cpp",
+                   "src/waveform/renderers/waveformbeat.cpp",
                    "src/waveform/renderers/waveformwidgetrenderer.cpp",
                    "src/waveform/renderers/waveformrendererabstract.cpp",
                    "src/waveform/renderers/waveformrenderbackground.cpp",
@@ -1226,8 +1229,6 @@ class MixxxCore(Feature):
                    "src/skin/launchimage.cpp",
 
                    "src/track/beatfactory.cpp",
-                   "src/track/beatgrid.cpp",
-                   "src/track/beatmap.cpp",
                    "src/track/beatutils.cpp",
                    "src/track/beats.cpp",
                    "src/track/bpm.cpp",

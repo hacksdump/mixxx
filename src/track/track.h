@@ -450,8 +450,14 @@ class Track : public QObject {
 
     mixxx::CueInfoImporterPointer m_pCueInfoImporterPending;
 
+    /// Prints track contents information, for debugging purposes only
+    friend QDebug operator<<(QDebug dbg, const TrackPointer& arg);
+
     friend class TrackDAO;
     friend class GlobalTrackCache;
     friend class GlobalTrackCacheResolver;
     friend class SoundSourceProxy;
 };
+
+/// Prints track contents information, for debugging purposes only
+QDebug operator<<(QDebug dbg, const Track& arg);

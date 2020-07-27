@@ -5,10 +5,10 @@
 #include <atomic>
 
 #include "engine/engine.h"
-#include "track/beatfactory.h"
 #include "track/trackref.h"
 #include "util/assert.h"
 #include "util/color/color.h"
+#include "util/frameadapter.h"
 #include "util/logger.h"
 
 namespace {
@@ -49,7 +49,7 @@ inline mixxx::Bpm getActualBpm(
     // Reason: The BPM value in the metadata might be normalized
     // or rounded, e.g. ID3v2 only supports integer values.
     if (pBeats) {
-        return mixxx::Bpm(pBeats->getBpm());
+        return mixxx::Bpm(pBeats->getBpm().getValue());
     } else {
         return bpm;
     }
@@ -258,7 +258,7 @@ double Track::getBpm() const {
         // BPM from beat grid overrides BPM from metadata
         // Reason: The BPM value in the metadata might be imprecise,
         // e.g. ID3v2 only supports integer values!
-        double beatsBpm = m_pBeats->getBpm();
+        double beatsBpm = m_pBeats->getBpm().getValue();
         if (mixxx::Bpm::isValidValue(beatsBpm)) {
             bpm = beatsBpm;
         }
@@ -266,6 +266,7 @@ double Track::getBpm() const {
     return bpm;
 }
 
+// TODO(JVC) It makes no sense to setBpm on a beatmap. To be removed.
 double Track::setBpm(double bpmValue) {
     if (!mixxx::Bpm::isValidValue(bpmValue)) {
         // If the user sets the BPM to an invalid value, we assume
@@ -276,20 +277,23 @@ double Track::setBpm(double bpmValue) {
 
     QMutexLocker lock(&m_qMutex);
 
+    // TODO(JVC) A track must always have a Beats even if it's empty
     if (!m_pBeats) {
         // No beat grid available -> create and initialize
-        double cue = getCuePoint().getPosition();
-        mixxx::BeatsPointer pBeats(BeatFactory::makeBeatGrid(*this, bpmValue, cue));
+        mixxx::FramePos cue = samplePosToFramePos(getCuePoint().getPosition());
+        mixxx::BeatsPointer pBeats = std::make_shared<mixxx::Beats>(this);
+        // setGrid accepts frames, but cue is in samples.
+        pBeats->setGrid(mixxx::Bpm(bpmValue), cue);
         setBeatsAndUnlock(&lock, pBeats);
         return bpmValue;
     }
 
     // Continue with the regular case
-    if (m_pBeats->getBpm() != bpmValue) {
+    if (m_pBeats->getBpm().getValue() != bpmValue) {
         if (kLogger.debugEnabled()) {
             kLogger.debug() << "Updating BPM:" << getLocation();
         }
-        m_pBeats->setBpm(bpmValue);
+        m_pBeats->setBpm(mixxx::Bpm(bpmValue));
         markDirtyAndUnlock(&lock);
         // Tell the GUI to update the bpm label...
         //qDebug() << "Track signaling BPM update to" << f;
@@ -318,15 +322,15 @@ void Track::setBeatsAndUnlock(QMutexLocker* pLock, mixxx::BeatsPointer pBeats) {
     }
 
     if (m_pBeats) {
-        disconnect(m_pBeats.data(), &mixxx::Beats::updated, this, &Track::slotBeatsUpdated);
+        disconnect(m_pBeats.get(), &mixxx::Beats::updated, this, &Track::slotBeatsUpdated);
     }
 
     m_pBeats = std::move(pBeats);
 
     auto bpmValue = mixxx::Bpm::kValueUndefined;
     if (m_pBeats) {
-        bpmValue = m_pBeats->getBpm();
-        connect(m_pBeats.data(), &mixxx::Beats::updated, this, &Track::slotBeatsUpdated);
+        bpmValue = m_pBeats->getBpm().getValue();
+        connect(m_pBeats.get(), &mixxx::Beats::updated, this, &Track::slotBeatsUpdated);
     }
     m_record.refMetadata().refTrackInfo().setBpm(mixxx::Bpm(bpmValue));
 
@@ -345,7 +349,7 @@ void Track::slotBeatsUpdated() {
 
     auto bpmValue = mixxx::Bpm::kValueUndefined;
     if (m_pBeats) {
-        bpmValue = m_pBeats->getBpm();
+        bpmValue = m_pBeats->getBpm().getValue();
     }
     m_record.refMetadata().refTrackInfo().setBpm(mixxx::Bpm(bpmValue));
 
@@ -1047,19 +1051,16 @@ void Track::setDirtyAndUnlock(QMutexLocker* pLock, bool bDirty) {
 
     // Unlock before emitting any signals!
     pLock->unlock();
-
-    if (trackId.isValid()) {
-        if (dirtyChanged) {
-            if (bDirty) {
-                emit dirty(trackId);
-            } else {
-                emit clean(trackId);
-            }
-        }
+    if (dirtyChanged) {
         if (bDirty) {
-            // Emit a changed signal regardless if this attempted to set us dirty.
-            emit changed(trackId);
+            emit dirty(trackId);
+        } else {
+            emit clean(trackId);
         }
+    }
+    if (bDirty) {
+        // Emit a changed signal regardless if this attempted to set us dirty.
+        emit changed(trackId);
     }
 }
 
@@ -1383,4 +1384,22 @@ void Track::updateAudioPropertiesFromStream(
             << "cue(s)";
     importPendingCueInfosMarkDirtyAndUnlock(
             &lock);
+}
+
+QDebug operator<<(QDebug dbg, const TrackPointer& arg) {
+    dbg << "Track Debug Info";
+    dbg << "m_bDirty:" << arg->m_bDirty;
+    dbg << "m_bMarkedForMetadataExport:" << arg->m_bMarkedForMetadataExport;
+    dbg << "duration:" << arg->getDuration();
+    dbg << "Sample Rate:" << arg->getSampleRate();
+    dbg << "m_cuePoints:";
+    for (auto cuePoint : arg->m_cuePoints) {
+        dbg << "\tDirty:" << cuePoint->isDirty();
+        //qDebug() << "\tPosition:" << cuePoint->getPosition();
+        dbg << "\tType:" << int(cuePoint->getType());
+        dbg << "\tLabel:" << cuePoint->getLabel();
+    }
+    dbg << "m_pBeats:";
+    dbg << arg->m_pBeats;
+    return dbg;
 }

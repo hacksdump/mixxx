@@ -2,10 +2,12 @@
 // Created 7/5/2009 by RJ Ryan (rryan@mit.edu)
 
 #include "engine/controls/enginecontrol.h"
-#include "engine/enginemaster.h"
+
 #include "engine/enginebuffer.h"
+#include "engine/enginemaster.h"
 #include "engine/sync/enginesync.h"
 #include "mixer/playermanager.h"
+#include "util/frameadapter.h"
 
 EngineControl::EngineControl(QString group,
                              UserSettingsPointer pConfig)
@@ -114,4 +116,12 @@ EngineBuffer* EngineControl::pickSyncTarget() {
         return pSyncable->getChannel()->getEngineBuffer();
     }
     return nullptr;
+}
+
+EngineControl::FrameOfTrack EngineControl::getFrameOfTrack() const {
+    FrameOfTrack frameOfTrack{
+            samplePosToFramePos(getSampleOfTrack().current),
+            samplePosToFramePos(getSampleOfTrack().total),
+            getSampleOfTrack().rate};
+    return frameOfTrack;
 }

@@ -27,8 +27,18 @@ ControlPickerMenu::ControlPickerMenu(QWidget* pParent)
 
     // Master Controls
     QMenu* mixerMenu = addSubmenu(tr("Mixer"));
-    addControl("[Master]", "balance", tr("Main Output Balance"), tr("Main output balance"), mixerMenu, true);
-    addControl("[Master]", "delay", tr("Main Output Delay"), tr("Main output delay"), mixerMenu, true);
+    addControl("[Master]",
+            "balance",
+            tr("Main Output Balance"),
+            tr("Main output balance"),
+            mixerMenu,
+            true);
+    addControl("[Master]",
+            "delay",
+            tr("Main Output Delay"),
+            tr("Main output delay"),
+            mixerMenu,
+            true);
     addControl("[Master]", "crossfader", tr("Crossfader"), tr("Crossfader"), mixerMenu, true);
     addControl("[Master]", "gain", tr("Main Output Gain"), tr("Main output gain"), mixerMenu, true);
     addControl("[Master]", "headGain", tr("Headphone Gain"), tr("Headphone gain"), mixerMenu, true);

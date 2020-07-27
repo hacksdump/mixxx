@@ -1,49 +1,40 @@
-#ifndef BEATS_H
-#define BEATS_H
+#pragma once
 
+#include <QByteArray>
+#include <QList>
+#include <QMutex>
 #include <QObject>
 #include <QString>
-#include <QList>
-#include <QByteArray>
-#include <QSharedPointer>
+#include <QVector>
+#include <memory>
 
-#include "util/memory.h"
+#include "proto/beats.pb.h"
+#include "track/beat.h"
+#include "track/bpm.h"
+#include "track/frame.h"
 #include "util/types.h"
-
-namespace {
-    double kMaxBpm = 500;
-}
 
 namespace mixxx {
 
 class Beats;
-typedef QSharedPointer<Beats> BeatsPointer;
+class BeatIterator;
+using BeatsPointer = std::shared_ptr<Beats>;
+} // namespace mixxx
 
-class BeatIterator {
+#include "track/beatiterator.h"
+#include "track/timesignature.h"
+
+class Track;
+
+namespace mixxx {
+/// This is an intermediate class which encapsulates the beats into a
+/// plain copyable, movable object.
+class BeatsInternal {
   public:
-    virtual ~BeatIterator() = default;
-    virtual bool hasNext() const = 0;
-    virtual double next() = 0;
-};
-
-// Beats is a pure abstract base class for BPM and beat management classes. It
-// provides a specification of all methods a beat-manager class must provide, as
-// well as a capability model for representing optional features.
-class Beats : public QObject {
-    Q_OBJECT
-  public:
-    Beats() { }
-    ~Beats() override = default;
-
-    enum Capabilities {
-        BEATSCAP_NONE          = 0x0000,
-        BEATSCAP_ADDREMOVE     = 0x0001, // Add or remove a single beat
-        BEATSCAP_TRANSLATE     = 0x0002, // Move all beat markers earlier or later
-        BEATSCAP_SCALE         = 0x0004, // Scale beat distance by a fixed ratio
-        BEATSCAP_MOVEBEAT      = 0x0008, // Move a single Beat
-        BEATSCAP_SETBPM        = 0x0010  // Set new bpm, beat grid only
-    };
-    typedef int CapabilitiesFlags; // Allows us to do ORing
+    BeatsInternal();
+    void initWithProtobuf(const QByteArray& byteArray);
+    void initWithAnalyzer(const QVector<FramePos>& beats,
+            const QVector<track::io::TimeSignatureMarker>& timeSignatureMarkers);
 
     enum BPMScale {
         DOUBLE,
@@ -54,124 +45,235 @@ class Beats : public QObject {
         THREEHALVES,
     };
 
-    virtual Beats::CapabilitiesFlags getCapabilities() const = 0;
+    using iterator = BeatIterator;
 
-    // Serialization
-    virtual QByteArray toByteArray() const = 0;
-    virtual BeatsPointer clone() const = 0;
+    static const QString BEAT_MAP_VERSION;
+    static const QString BEAT_GRID_1_VERSION;
+    static const QString BEAT_GRID_2_VERSION;
+    static const QString BEATS_VERSION;
+    FramePos findNthBeat(FramePos frame, int offset) const;
+    FramePos findNextBeat(FramePos frame) const;
+    FramePos findPrevBeat(FramePos frame) const;
+    Bpm getBpm() const;
+    bool isValid() const;
+    void setSampleRate(int sampleRate);
+    void setDurationSeconds(double duration) {
+        m_dDurationSeconds = duration;
+    }
+    int numBeatsInRange(FramePos startFrame, FramePos endFrame) const;
+    QByteArray toProtobuf() const;
+    QString getVersion() const;
+    QString getSubVersion() const;
+    void setSubVersion(const QString& subVersion);
+    Bpm calculateBpm(const Beat& startBeat,
+            const Beat& stopBeat) const;
+    void scale(enum BPMScale scale);
+    FramePos findNBeatsFromFrame(FramePos fromFrame, double beats) const;
+    bool findPrevNextBeats(FramePos frame,
+            FramePos* pPrevBeatFrame,
+            FramePos* pNextBeatFrame) const;
+    void setGrid(Bpm dBpm, FramePos firstBeatFrame = FramePos());
+    FramePos findClosestBeat(FramePos frame) const;
+    std::unique_ptr<BeatsInternal::iterator> findBeats(
+            FramePos startFrame, FramePos stopFrame) const;
+    bool hasBeatInRange(FramePos startFrame, FramePos stopFrame) const;
+    double getBpmRange(FramePos startFrame, FramePos stopFrame) const;
+    Bpm getBpmAroundPosition(FramePos curFrame, int n) const;
+    void setSignature(TimeSignature sig, int downbeatIndex);
+    void translate(FrameDiff_t numFrames);
+    void setBpm(Bpm bpm);
+    inline int size() {
+        return m_beats.size();
+    }
+    FramePos getFirstBeatPosition() const;
+    FramePos getLastBeatPosition() const;
+    Beat getBeatAtIndex(int index) {
+        return m_beats.at(index);
+    }
 
-    // A string representing the version of the beat-processing code that
-    // produced this Beats instance. Used by BeatsFactory for associating a
-    // given serialization with the version that produced it.
-    virtual QString getVersion() const = 0;
-    // A sub-version can be used to represent the preferences used to generate
-    // the beats object.
-    virtual QString getSubVersion() const = 0;
+  private:
+    void updateBpm();
+    void scaleDouble();
+    void scaleTriple();
+    void scaleQuadruple();
+    void scaleHalve();
+    void scaleThird();
+    void scaleFourth();
+    void scaleMultiple(uint multiple);
+    void scaleFraction(uint fraction);
+    void generateBeatsFromMarkers();
+    void clearMarkers();
 
-    ////////////////////////////////////////////////////////////////////////////
-    // Beat calculations
-    ////////////////////////////////////////////////////////////////////////////
+    QString m_subVersion;
+    Bpm m_bpm;
+    BeatList m_beats;
+    track::io::Beats m_beatsProto;
+    int m_iSampleRate;
+    double m_dDurationSeconds;
+    friend QDebug operator<<(QDebug dbg, const BeatsInternal& arg);
+};
 
-    // TODO: We may want all of these find functions to return an integer
-    //       instead of a double.
+/// Beats is a class for BPM and beat management classes.
+/// It stores beats information including beats position, down beats position,
+/// phrase beat position and changes in tempo.
+class Beats final : public QObject {
+    Q_OBJECT
+  public:
+    /// Initialize beats with only the track pointer.
+    explicit Beats(const Track* track);
+    /// The source of this byte array is the serialized representation of beats
+    /// generated by the protocol buffer and stored in the database.
+    Beats(const Track* track, const QByteArray& byteArray);
+    /// A list of beat locations in audio frames may be provided.
+    /// The source of this data is the analyzer.
+    Beats(const Track* track,
+            const QVector<FramePos>& beats,
+            const QVector<track::io::TimeSignatureMarker>&
+                    timeSignatureMarkers =
+                            QVector<track::io::TimeSignatureMarker>());
+    ~Beats() override = default;
+
+    using iterator = BeatIterator;
+
+    // TODO(JVC) Is a copy constructor needed? of we can force a move logic??
+    Beats(const mixxx::Beats& other);
+
+    /// Serializes into a protobuf.
+    QByteArray toProtobuf() const;
+    BeatsPointer clone() const;
+
+    /// Returns a string representing the version of the beat-processing code that
+    /// produced this Beats instance. Used by BeatsFactory for associating a
+    /// given serialization with the version that produced it.
+    QString getVersion() const;
+    /// Return a string that represent the preferences used to generate
+    /// the beats object.
+    QString getSubVersion() const;
+    void setSubVersion(const QString& subVersion);
+    bool isValid() const;
+    /// Calculates the BPM between two beat positions.
+    Bpm calculateBpm(const Beat& startBeat,
+            const Beat& stopBeat) const;
+
+    /// Initializes the BeatGrid to have a BPM of dBpm and the first beat offset
+    /// of firstBeatFrame. Does not generate an updated() signal, since it is
+    /// meant for initialization.
+    void setGrid(Bpm dBpm, FramePos firstBeatFrame = FramePos());
+
     // TODO: We may want to implement these with common code that returns
     //       the triple of closest, next, and prev.
 
-    // Starting from sample dSamples, return the sample of the next beat in the
-    // track, or -1 if none exists. If dSamples refers to the location of a
-    // beat, dSamples is returned.
-    virtual double findNextBeat(double dSamples) const = 0;
+    /// Starting from frame, return the frame number of the next beat
+    /// in the track, or -1 if none exists. If frame refers to the location
+    /// of a beat, frame is returned.
+    FramePos findNextBeat(FramePos frame) const;
 
-    // Starting from sample dSamples, return the sample of the previous beat in
-    // the track, or -1 if none exists. If dSamples refers to the location of
-    // beat, dSamples is returned.
-    virtual double findPrevBeat(double dSamples) const = 0;
+    /// Starting from frame frame, return the frame number of the previous
+    /// beat in the track, or -1 if none exists. If frame refers to the
+    /// location of beat, frame is returned.
+    FramePos findPrevBeat(FramePos frame) const;
 
-    // Starting from sample dSamples, fill the samples of the previous beat
-    // and next beat.  Either can be -1 if none exists.  If dSamples refers
-    // to the location of the beat, the first value is dSamples, and the second
-    // value is the next beat position.  Non- -1 values are guaranteed to be
-    // even.  Returns false if *at least one* sample is -1.  (Can return false
-    // with one beat successfully filled)
-    virtual bool findPrevNextBeats(double dSamples,
-                                   double* dpPrevBeatSamples,
-                                   double* dpNextBeatSamples) const = 0;
+    /// Starting from frame, fill the frame numbers of the previous beat
+    /// and next beat.  Either can be -1 if none exists.  If frame refers
+    /// to the location of the beat, the first value is frame, and the second
+    /// value is the next beat position.  Non- -1 values are guaranteed to be
+    /// even.  Returns false if *at least one* frame is -1.  (Can return false
+    /// with one beat successfully filled)
+    bool findPrevNextBeats(FramePos frame,
+            FramePos* pPrevBeatFrame,
+            FramePos* pNextBeatFrame) const;
 
-    // Starting from sample dSamples, return the sample of the closest beat in
-    // the track, or -1 if none exists.  Non- -1 values are guaranteed to be
-    // even.
-    virtual double findClosestBeat(double dSamples) const = 0;
+    /// Starting from frame, return the frame number of the closest beat
+    /// in the track, or -1 if none exists.  Non- -1 values are guaranteed to be
+    /// even.
+    FramePos findClosestBeat(FramePos frame) const;
 
-    // Find the Nth beat from sample dSamples. Works with both positive and
-    // negative values of n. Calling findNthBeat with n=0 is invalid. Calling
-    // findNthBeat with n=1 or n=-1 is equivalent to calling findNextBeat and
-    // findPrevBeat, respectively. If dSamples refers to the location of a beat,
-    // then dSamples is returned. If no beat can be found, returns -1.
-    virtual double findNthBeat(double dSamples, int n) const = 0;
+    /// Find the Nth beat from frame. Works with both positive and
+    /// negative values of n. If frame refers to the location of a beat,
+    /// then frame is returned. If no beat can be found, returns -1.
+    FramePos findNthBeat(FramePos frame, int offset) const;
 
-    int numBeatsInRange(double dStartSample, double dEndSample);
+    int numBeatsInRange(FramePos startFrame, FramePos endFrame);
 
-    // Find the sample N beats away from dSample. The number of beats may be
-    // negative and does not need to be an integer.
-    double findNBeatsFromSample(double fromSample, double beats) const;
+    /// Find the frame N beats away from frame. The number of beats may be
+    /// negative and does not need to be an integer.
+    FramePos findNBeatsFromFrame(FramePos fromFrame, double beats) const;
 
+    /// Return an iterator to a container of Beats containing the Beats
+    /// between startFrameNum and endFrameNum. THe BeatIterator must be iterated
+    /// while a strong reference to the Beats object to ensure that the Beats
+    /// object is not deleted. Caller takes ownership of the returned BeatsIterator
+    std::unique_ptr<Beats::iterator> findBeats(FramePos startFrame,
+            FramePos stopFrame) const;
 
-    // Adds to pBeatsList the position in samples of every beat occurring between
-    // startPosition and endPosition. BeatIterator must be iterated while
-    // holding a strong references to the Beats object to ensure that the Beats
-    // object is not deleted. Caller takes ownership of the returned BeatIterator;
-    virtual std::unique_ptr<BeatIterator> findBeats(double startSample, double stopSample) const = 0;
+    /// Return whether or not a Beat lies between startFrameNum and endFrameNum
+    bool hasBeatInRange(FramePos startFrame,
+            FramePos stopFrame) const;
 
-    // Return whether or not a sample lies between startPosition and endPosition
-    virtual bool hasBeatInRange(double startSample, double stopSample) const = 0;
-
-    // Return the average BPM over the entire track if the BPM is
-    // valid, otherwise returns -1
-    virtual double getBpm() const = 0;
-
-    // Return the average BPM over the range from startSample to endSample,
-    // specified in samples if the BPM is valid, otherwise returns -1
-    virtual double getBpmRange(double startSample, double stopSample) const = 0;
-
-    // Return the average BPM over the range of n*2 beats centered around
-    // curSample.  (An n of 4 results in an averaging of 8 beats).  Invalid
-    // BPM returns -1.
-    virtual double getBpmAroundPosition(double curSample, int n) const = 0;
-
-    virtual double getMaxBpm() const {
-        return kMaxBpm;
+    /**
+     * Return Beat at (0 based) index
+     * @param index
+     * @return Beat object
+     */
+    Beat getBeatAtIndex(int index) {
+        return m_beatsInternal.getBeatAtIndex(index);
     }
 
-    ////////////////////////////////////////////////////////////////////////////
-    // Beat mutations
-    ////////////////////////////////////////////////////////////////////////////
+    /// Return the average BPM over the entire track if the BPM is
+    /// valid, otherwise returns -1
+    Bpm getBpm() const;
 
-    // Add a beat at location dBeatSample. Beats instance must have the
-    // capability BEATSCAP_ADDREMOVE.
-    virtual void addBeat(double dBeatSample) = 0;
+    /// Return the average BPM over the range from startFrameNum to endFrameNum,
+    /// specified in frames if the BPM is valid, otherwise returns -1
+    double getBpmRange(FramePos startFrame,
+            FramePos stopFrame) const;
 
-    // Remove a beat at location dBeatSample. Beats instance must have the
-    // capability BEATSCAP_ADDREMOVE.
-    virtual void removeBeat(double dBeatSample) = 0;
+    /// Return the average BPM over the range of n*2 beats centered around
+    /// curFrameNum.  (An n of 4 results in an averaging of 8 beats).  Invalid
+    /// BPM returns -1.
+    Bpm getBpmAroundPosition(FramePos curFrame, int n) const;
 
-    // Translate all beats in the song by dNumSamples samples. Beats that lie
-    // before the start of the track or after the end of the track are not
-    // removed. Beats instance must have the capability BEATSCAP_TRANSLATE.
-    virtual void translate(double dNumSamples) = 0;
+    /// Sets the track signature starting at specified bar
+    void setSignature(TimeSignature sig, int downbeatIndex);
 
-    // Scale the position of every beat in the song by dScalePercentage. Beats
-    // class must have the capability BEATSCAP_SCALE.
-    virtual void scale(enum BPMScale scale) = 0;
+    /// Sets the nearest beat as a downbeat
 
-    // Adjust the beats so the global average BPM matches dBpm. Beats class must
-    // have the capability BEATSCAP_SET.
-    virtual void setBpm(double dBpm) = 0;
+    /// Translate all beats in the song by numFrames. Beats that lie
+    /// before the start of the track or after the end of the track are not
+    /// removed.
+    void translate(FrameDiff_t numFrames);
 
-    virtual SINT getSampleRate() const = 0;
+    /// Scale the position of every beat in the song by dScalePercentage.
+    void scale(enum BeatsInternal::BPMScale scale);
+
+    /// Adjust the beats so the global average BPM matches dBpm.
+    void setBpm(Bpm bpm);
+
+    /// Returns the number of beats
+    inline int size() {
+        return m_beatsInternal.size();
+    }
+
+    /// Returns the frame number for the first beat, -1 is no beats
+    FramePos getFirstBeatPosition() const;
+
+    /// Returns the frame number for the last beat, -1 if no beats
+    FramePos getLastBeatPosition() const;
+
+    /// Return the sample rate
+    SINT getSampleRate() const;
+
+    /// Prints debugging information in stderr
+    friend QDebug operator<<(QDebug dbg, const BeatsPointer& arg);
+
+  private slots:
+    void slotTrackBeatsUpdated();
+  private:
+    mutable QMutex m_mutex;
+    const Track* m_track;
+    BeatsInternal m_beatsInternal;
 
   signals:
     void updated();
 };
-
 } // namespace mixxx
-#endif /* BEATS_H */

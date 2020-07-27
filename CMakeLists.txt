@@ -718,8 +718,6 @@ add_library(mixxx-lib STATIC EXCLUDE_FROM_ALL
   src/sources/soundsourcesndfile.cpp
   src/track/albuminfo.cpp
   src/track/beatfactory.cpp
-  src/track/beatgrid.cpp
-  src/track/beatmap.cpp
   src/track/beats.cpp
   src/track/beatutils.cpp
   src/track/bpm.cpp
@@ -814,6 +812,7 @@ add_library(mixxx-lib STATIC EXCLUDE_FROM_ALL
   src/waveform/renderers/qtvsynctestrenderer.cpp
   src/waveform/renderers/qtwaveformrendererfilteredsignal.cpp
   src/waveform/renderers/qtwaveformrenderersimplesignal.cpp
+  src/waveform/renderers/waveformbeat.cpp
   src/waveform/renderers/waveformmark.cpp
   src/waveform/renderers/waveformmarkrange.cpp
   src/waveform/renderers/waveformmarkset.cpp
@@ -859,6 +858,7 @@ add_library(mixxx-lib STATIC EXCLUDE_FROM_ALL
   src/widget/wanalysislibrarytableview.cpp
   src/widget/wbasewidget.cpp
   src/widget/wbattery.cpp
+  src/widget/wbeatmenu.cpp
   src/widget/wbeatspinbox.cpp
   src/widget/wcolorpicker.cpp
   src/widget/wcolorpickeraction.cpp
@@ -909,6 +909,7 @@ add_library(mixxx-lib STATIC EXCLUDE_FROM_ALL
   src/widget/wstarrating.cpp
   src/widget/wstatuslight.cpp
   src/widget/wtime.cpp
+  src/widget/wtimesignaturemenu.cpp
   src/widget/wtrackmenu.cpp
   src/widget/wtrackproperty.cpp
   src/widget/wtracktableview.cpp
@@ -1228,8 +1229,7 @@ add_executable(mixxx-test
   src/test/audiotaperpot_test.cpp
   src/test/autodjprocessor_test.cpp
   src/test/baseeffecttest.cpp
-  src/test/beatgridtest.cpp
-  src/test/beatmaptest.cpp
+  src/test/beatstest.cpp
   src/test/beatstranslatetest.cpp
   src/test/bpmcontrol_test.cpp
   src/test/broadcastprofile_test.cpp

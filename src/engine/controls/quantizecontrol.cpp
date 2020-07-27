@@ -2,14 +2,16 @@
 // Created on Sat 5, 2011
 // Author: pwhelan
 
+#include "engine/controls/quantizecontrol.h"
+
 #include <QtDebug>
 
 #include "control/controlobject.h"
-#include "preferences/usersettings.h"
 #include "control/controlpushbutton.h"
-#include "engine/controls/quantizecontrol.h"
 #include "engine/controls/enginecontrol.h"
+#include "preferences/usersettings.h"
 #include "util/assert.h"
+#include "util/frameadapter.h"
 
 QuantizeControl::QuantizeControl(QString group,
                                  UserSettingsPointer pConfig)
@@ -40,7 +42,7 @@ void QuantizeControl::trackLoaded(TrackPointer pNewTrack) {
         lookupBeatPositions(0.0);
         updateClosestBeat(0.0);
     } else {
-        m_pBeats.clear();
+        m_pBeats.reset();
         m_pCOPrevBeat->set(-1);
         m_pCONextBeat->set(-1);
         m_pCOClosestBeat->set(-1);
@@ -81,10 +83,10 @@ void QuantizeControl::playPosChanged(double dNewPlaypos) {
 void QuantizeControl::lookupBeatPositions(double dCurrentSample) {
     mixxx::BeatsPointer pBeats = m_pBeats;
     if (pBeats) {
-        double prevBeat, nextBeat;
-        pBeats->findPrevNextBeats(dCurrentSample, &prevBeat, &nextBeat);
-        m_pCOPrevBeat->set(prevBeat);
-        m_pCONextBeat->set(nextBeat);
+        mixxx::FramePos prevBeat, nextBeat;
+        pBeats->findPrevNextBeats(samplePosToFramePos(dCurrentSample), &prevBeat, &nextBeat);
+        m_pCOPrevBeat->set(framePosToSamplePos(prevBeat));
+        m_pCONextBeat->set(framePosToSamplePos(nextBeat));
     }
 }
 
